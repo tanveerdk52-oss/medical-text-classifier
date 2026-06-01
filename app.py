@@ -1,100 +1,60 @@
-
 import streamlit as st
-import pickle
-import numpy as np
+import pickle, re, numpy as np
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+import nltk
+nltk.download("stopwords",quiet=True)
+nltk.download("wordnet",quiet=True)
 
-# Page config
-st.set_page_config(
-    page_title="Medical Text Classifier",
-    page_icon="🏥",
-    layout="centered"
-)
-
-# Title
-st.title("🏥 Medical Text Classification")
-st.markdown("**Classify medical questions into specialties using AI**")
-st.markdown("---")
-
-# Load model and vectorizer
 @st.cache_resource
-def load_model():
-    with open("lr_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    with open("tfidf.pkl", "rb") as f:
-        tfidf = pickle.load(f)
-    classes = np.load("label_classes.npy", allow_pickle=True)
-    return model, tfidf, classes
+def load_models():
+    with open("lr_model.pkl","rb") as f: lr=pickle.load(f)
+    with open("tfidf.pkl","rb") as f: tfidf=pickle.load(f)
+    classes=np.load("label_classes.npy",allow_pickle=True)
+    return lr,tfidf,classes
 
-model, tfidf, classes = load_model()
+lr,tfidf,classes=load_models()
+stemmer=PorterStemmer()
+lemmatizer=WordNetLemmatizer()
+STOP=set(stopwords.words("english"))-{"not","no","without"}
 
-# Example inputs
-st.subheader("📋 Try an Example")
-examples = {
-    "Cardiology": "Patient presents with chest pain and shortness of breath. ECG shows ST elevation. Troponin 2.4 ng/mL elevated.",
-    "Neurology":  "45 year old with sudden onset weakness on right side. CT brain shows hypodense area in left MCA territory.",
-    "Surgery":    "Patient has acute abdominal pain with rebound tenderness. WBC 15000. CT confirms appendicitis.",
-    "Pharmacology": "Which drug is used for treatment of hypertension and also has cardioprotective effects in heart failure patients?",
-    "Pediatrics": "6 year old child with fever 39.5C for 3 days. Throat culture positive for streptococcus."
+def preprocess(text):
+    text=str(text).lower()
+    text=re.sub(r"http\S+","",text)
+    text=re.sub(r"[^a-z0-9\s]"," ",text)
+    tokens=[lemmatizer.lemmatize(stemmer.stem(t))
+            for t in text.split() if t not in STOP and len(t)>1][:256]
+    return " ".join(tokens)
+
+st.set_page_config(page_title="Medical Classifier",page_icon="🏥")
+st.title("🏥 Medical Subject Classifier")
+st.markdown("Classifies medical questions into 20 subjects.")
+st.divider()
+examples={
+    "Pharmacology":"Patient prescribed metformin type 2 diabetes mechanism Decreases gluconeogenesis Increases insulin secretion",
+    "Surgery":"Contraindication laparoscopic cholecystectomy Previous abdominal surgery Pregnancy Acute cholecystitis",
+    "Microbiology":"Gram positive cocci clusters coagulase positive beta lactamase Staph aureus Strep pyogenes",
+    "Pediatrics":"18 month old fever bulging fontanelle CSF cloudy glucose low Bacterial meningitis Viral meningitis",
+    "Anatomy":"Nerve injured fracture surgical neck humerus Axillary Radial Musculocutaneous Ulnar",
 }
-
-col1, col2, col3 = st.columns(3)
-if col1.button("🫀 Cardiology"):
-    st.session_state.input_text = examples["Cardiology"]
-if col2.button("🧠 Neurology"):
-    st.session_state.input_text = examples["Neurology"]
-if col3.button("🔪 Surgery"):
-    st.session_state.input_text = examples["Surgery"]
-
-col4, col5 = st.columns(2)
-if col4.button("💊 Pharmacology"):
-    st.session_state.input_text = examples["Pharmacology"]
-if col5.button("👶 Pediatrics"):
-    st.session_state.input_text = examples["Pediatrics"]
-
-st.markdown("---")
-
-# Text input
-st.subheader("✍️ Enter Medical Text")
-input_text = st.text_area(
-    "Type or paste medical text here:",
-    value=st.session_state.get("input_text", ""),
-    height=150,
-    placeholder="Enter a medical question or clinical note..."
-)
-
-# Predict button
-if st.button("🔍 Classify", use_container_width=True):
-    if input_text.strip():
-        # Preprocess
-        import re
-        text = input_text.lower()
-        text = re.sub(r"[^a-z0-9\s]", "", text)
-
-        # Predict
-        vec   = tfidf.transform([text])
-        pred  = model.predict(vec)[0]
-        proba = model.predict_proba(vec)[0]
-
-        predicted_label = classes[pred]
-        confidence      = proba[pred] * 100
-
-        # Show result
-        st.markdown("---")
-        st.subheader("🎯 Prediction Result")
-        st.success(f"**Predicted Specialty: {predicted_label}**")
-        st.metric("Confidence", f"{confidence:.1f}%")
-
-        # Top 5 predictions
-        st.subheader("📊 Top 5 Predictions")
-        top5_idx = np.argsort(proba)[::-1][:5]
-        for i, idx in enumerate(top5_idx):
-            bar_val = proba[idx]
-            st.write(f"**{i+1}. {classes[idx]}** — {proba[idx]*100:.1f}%")
-            st.progress(float(bar_val))
-    else:
-        st.warning("Please enter some medical text first!")
-
-# Footer
-st.markdown("---")
-st.markdown("**DS Project — Group 29 | Medical Text Classification**")
-st.markdown("Models: Logistic Regression | BiLSTM | DistilBERT")
+st.subheader("Quick Examples")
+cols=st.columns(len(examples))
+selected=""
+for col,(label,text) in zip(cols,examples.items()):
+    if col.button(label): selected=text
+st.divider()
+user_input=st.text_area("Enter a medical question:",value=selected,height=150)
+if st.button("Classify",type="primary") and user_input.strip():
+    clean=preprocess(user_input)
+    vec=tfidf.transform([clean])
+    proba=lr.predict_proba(vec)[0]
+    top5=np.argsort(proba)[::-1][:5]
+    st.success("Predicted: "+classes[top5[0]])
+    st.metric("Confidence",str(round(proba[top5[0]]*100,1))+"%")
+    st.subheader("Top 5 Predictions")
+    for i,idx in enumerate(top5):
+        st.write(str(i+1)+". "+classes[idx])
+        st.progress(float(proba[idx]))
+        st.caption(str(round(proba[idx]*100,2))+"%")
+st.divider()
+st.caption("Group 29 | Variant B | MedMCQA 20-class")
