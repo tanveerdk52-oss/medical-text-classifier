@@ -3,8 +3,18 @@ import pickle, re, numpy as np
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 import nltk
-nltk.download("stopwords",quiet=True)
-nltk.download("wordnet",quiet=True)
+import gdown
+import os
+
+nltk.download("stopwords", quiet=True)
+nltk.download("wordnet", quiet=True)
+
+# Download model files from Google Drive if not present
+if not os.path.exists("lr_model.pkl"):
+    gdown.download("https://drive.google.com/uc?id=1f4PAIbDc0I1NHT1eSzQZpJ-xPIDXf1TP", "lr_model.pkl", quiet=False)
+
+if not os.path.exists("tfidf.pkl"):
+    gdown.download("https://drive.google.com/uc?id=161VLBn0iwUeRNIYFtiBBvUQ-YzBeNMnd", "tfidf.pkl", quiet=False)
 
 @st.cache_resource
 def load_models():
